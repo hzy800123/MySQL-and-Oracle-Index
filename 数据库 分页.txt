@@ -1,0 +1,193 @@
+MySQL, Oracle 数据库的 分页：
+
+
+-MySQL:
+
+分页查询 介绍：
+https://www.liaoxuefeng.com/wiki/1177760294764384/1217864791925600
+
+使用SELECT查询时，如果结果集数据量很大，比如几万行数据，放在一个页面显示的话数据量太大，不如分页显示，每次显示100条。
+要实现分页功能，实际上就是从结果集中显示第1~100条记录作为第1页，显示第101~200条记录作为第2页，以此类推。
+因此，分页实际上就是从结果集中“截取”出第M~N条记录。这个查询可以通过LIMIT <M> OFFSET <N>子句实现。
+
+select * from table limit m offset n
+或者可以写成：
+select * from table limit n, m
+
+其中，
+n是指记录开始的index，从0开始，表示第一条记录
+m是指从第n+1条开始，取m条 (最多m条)。
+select * from tablename limit 2, 4
+即取出第3条至第6条，4条记录
+
+（1）
+现在，我们把结果集分页，每页3条记录。要获取第1页的记录，可以使用LIMIT 3 OFFSET 0：
+SELECT id, name, gender, score
+FROM students
+ORDER BY score DESC
+LIMIT 3 OFFSET 0;
+
+上述查询LIMIT 3 OFFSET 0表示，对结果集从0号记录开始，最多取3条。注意SQL记录集的索引从0开始。
+
+
+（2）
+如果要查询第2页，那么我们只需要“跳过”头3条记录，也就是对结果集从3号记录开始查询，把OFFSET设定为3：
+SELECT id, name, gender, score
+FROM students
+ORDER BY score DESC
+LIMIT 3 OFFSET 3;
+
+=>
+总结：
+MySQL 的分页 方式：
+select * from students order by id limit pageSize*(pageNumber - 1), pageSize;
+or
+select * from students order by id limit 每页的记录条数*(页码 - 1), 每页的记录条数;
+
+pageSize:       每页的记录条数
+pageNumber:     页码
+
+
+计算总页数:
+应该是使用 总数量 除以 每页数量，并向上取整。
+
+
+例子：
+mysql> select * from user order by id;
++----+-----------+-----------+-----+---------------------+
+| id | user_name | pass_word | age | reg_time            |
++----+-----------+-----------+-----+---------------------+
+|  1 | John      | 123456    | 30  | 2020-02-23 12:33:45 |
+|  4 | Joan      | 123456    | 30  | 2020-02-23 12:33:45 |
+|  5 | Jane      | 123456    | 30  | 2020-02-23 12:33:45 |
+|  6 | Kate      | 123456    | 30  | 2020-02-23 12:33:45 |
+|  7 | Kate2     | 123456    | 30  | 2020-02-23 12:33:45 |
+| 11 | Mike      | 123456    | 31  | 2020-03-01 22:41:37 |
++----+-----------+-----------+-----+---------------------+
+6 rows in set (0.05 sec)
+
+mysql> select * from user order by id limit 3 offset 0;
++----+-----------+-----------+-----+---------------------+
+| id | user_name | pass_word | age | reg_time            |
++----+-----------+-----------+-----+---------------------+
+|  1 | John      | 123456    | 30  | 2020-02-23 12:33:45 |
+|  4 | Joan      | 123456    | 30  | 2020-02-23 12:33:45 |
+|  5 | Jane      | 123456    | 30  | 2020-02-23 12:33:45 |
++----+-----------+-----------+-----+---------------------+
+3 rows in set (0.04 sec)
+
+mysql> select * from user order by id limit 3 offset 1;
++----+-----------+-----------+-----+---------------------+
+| id | user_name | pass_word | age | reg_time            |
++----+-----------+-----------+-----+---------------------+
+|  4 | Joan      | 123456    | 30  | 2020-02-23 12:33:45 |
+|  5 | Jane      | 123456    | 30  | 2020-02-23 12:33:45 |
+|  6 | Kate      | 123456    | 30  | 2020-02-23 12:33:45 |
++----+-----------+-----------+-----+---------------------+
+3 rows in set (0.06 sec)
+
+mysql> select * from user order by id limit 3, 1;
++----+-----------+-----------+-----+---------------------+
+| id | user_name | pass_word | age | reg_time            |
++----+-----------+-----------+-----+---------------------+
+|  6 | Kate      | 123456    | 30  | 2020-02-23 12:33:45 |
++----+-----------+-----------+-----+---------------------+
+1 row in set (0.04 sec)
+
+mysql> select * from user order by id limit 1, 3;
++----+-----------+-----------+-----+---------------------+
+| id | user_name | pass_word | age | reg_time            |
++----+-----------+-----------+-----+---------------------+
+|  4 | Joan      | 123456    | 30  | 2020-02-23 12:33:45 |
+|  5 | Jane      | 123456    | 30  | 2020-02-23 12:33:45 |
+|  6 | Kate      | 123456    | 30  | 2020-02-23 12:33:45 |
++----+-----------+-----------+-----+---------------------+
+3 rows in set (0.05 sec)
+
+
+*************************************************
+*************************************************
+
+
+-Oracle:
+
+Oracle 的分页查询方式：(通过使用 三层嵌套)
+https://segmentfault.com/a/1190000021026631
+
+
+select * from
+    ( select rownum rn, a.* from
+        ( select * from 表名 where 条件 order by 列 ) a
+    where rownum <= 每页的条数 * 页数 ) b 
+where rn > 每页的条数 * (页数-1)
+
+或者可以写成：
+
+select * from 
+    ( select rownum rn, a.* from 
+        ( select * from EMP ) a
+    ) b
+where rn > pageSize * (pageNumber - 1) 
+and rn <= pageSize * pageNumber
+
+分页的过滤条件：
+rn（rownum) 大于        前一分页 offset
+rn (rownum) 小于等于    本分页 offset
+
+例子：
+第一页：        rn > 3 * (1 - 1)
+            and rn <= 3 * 1
+
+第二页：        rn > 3 * (2 - 1)
+            and run < 3 * 2
+
+查询 第一页：
+select * from 
+    ( select rownum rn, a.* from 
+        ( select * from EMP where empno > 1000 order by empno ) a 
+    where rownum <= 3 * 1 ) b 
+where rn > 3 * (1-1);
+
+
+SQL> select * from ( select rownum rn, a.* from ( select * from EMP where empno > 1000 order by empno ) a where rownum <= 3 * 1 ) b where rn > 3 * (1-1);
+
+        RN      EMPNO ENAME                JOB                       MGR HIREDATE              SAL       COMM     DEPTNO
+---------- ---------- -------------------- ------------------ ---------- -------------- ---------- ---------- ----------
+         1       7369 SMITH                CLERK                    7902 17-12月-80            800                    20
+         2       7499 ALLEN                SALESMAN                 7698 20-2月 -81           1600        300         30
+         3       7521 WARD                 SALESMAN                 7698 22-2月 -81           1250        500         30
+
+
+
+留意：rownum (rn) 在子查询里，是从1开始的。
+
+SQL> select rownum rn, a.* from ( select * from EMP where empno > 1000 order by empno ) a;
+
+        RN      EMPNO ENAME                JOB                       MGR HIREDATE              SAL       COMM     DEPTNO
+---------- ---------- -------------------- ------------------ ---------- -------------- ---------- ---------- ----------
+         1       7369 SMITH                CLERK                    7902 17-12月-80            800                    20
+         2       7499 ALLEN                SALESMAN                 7698 20-2月 -81           1600        300         30
+         3       7521 WARD                 SALESMAN                 7698 22-2月 -81           1250        500         30
+         4       7566 JONES                MANAGER                  7839 02-4月 -81           2975                    20
+         5       7654 MARTIN               SALESMAN                 7698 28-9月 -81           1250       1400         30
+         6       7698 BLAKE                MANAGER                  7839 01-5月 -81           2850                    30
+         7       7782 CLARK                MANAGER                  7839 09-6月 -81           2450                    10
+         8       7788 SCOTT                ANALYST                  7566 19-4月 -87           3000                    20
+         9       7839 KING                 PRESIDENT                     17-11月-81           6000                    10
+        10       7844 TURNER               SALESMAN                 7698 08-9月 -81           1500          0         30
+        11       7876 ADAMS                CLERK                    7788 23-5月 -87           1100                    20
+
+        RN      EMPNO ENAME                JOB                       MGR HIREDATE              SAL       COMM     DEPTNO
+---------- ---------- -------------------- ------------------ ---------- -------------- ---------- ---------- ----------
+        12       7900 JAMES                CLERK                    7698 03-12月-81            950                    30
+        13       7902 FORD                 ANALYST                  7566 03-12月-81           3000                    20
+        14       7934 MILLER               CLERK                    7782 23-1月 -82           1300                    10
+
+已选择14行。
+
+
+
+另外：
+Rowid 和 Rownum 的区别：
+- rowid 是记录在创建的时候生成的，而且是不变的，直接指向硬件上的存储位置。
+- rownum 是一个伪列，查询的时候，除非特别指定，否则不会显示，表示行号，常用于控制返回的行号。用来表示查询的记录是在第几行的。
