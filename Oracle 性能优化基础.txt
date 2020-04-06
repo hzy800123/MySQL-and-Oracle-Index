@@ -1,0 +1,297 @@
+- Oracle 的基本 性能优化 工具：
+1. 告警日志
+2. 跟踪文件
+3. 执行计划
+4. 统计信息
+5. 自动跟踪 auto trace
+6. 动态性能视图
+
+
+
+1. 告警日志 alert_orcl.log
+
+(a) 位置：
+查看 告警日志 的位置：
+background_dump_dest    string  c:\app\huang\diag\rdbms\orcl\orcl\trace
+
+(b) 记录的信息：
+- 启动数据库、停止数据库
+- 数据库的结构发生变化：创建了一个新的表空间：切换日志
+- 死锁 （Oracle 自动检测到 线程互相等待）
+
+例子：
+(a)
+SQL> show parameter dump;
+
+NAME                                 TYPE                   VALUE
+------------------------------------ ---------------------- ------------------------------
+background_core_dump                 string                 partial
+background_dump_dest                 string                 c:\app\huang\diag\rdbms\orcl\o
+                                                            rcl\trace
+core_dump_dest                       string                 c:\app\huang\diag\rdbms\orcl\o
+                                                            rcl\cdump
+max_dump_file_size                   string                 unlimited
+shadow_core_dump                     string                 none
+user_dump_dest                       string                 c:\app\huang\diag\rdbms\orcl\o
+                                                            rcl\trace
+
+(b) 打开 2个 会话窗口(A 和 B):
+-Session A:
+SQL> update emp set sal=6000 where empno = 7839;
+
+-Session B:
+SQL> update emp set sal=6000 where empno = 7566;
+
+-Session A:
+SQL> update emp set sal=6000 where empno = 7566;
+
+-Session B:
+SQL> update emp set sal=6000 where empno = 7839;
+update emp set sal=6000 where empno=7839
+       *
+第 1 行出现错误:
+ORA-00060: 等待资源时检测到死锁
+
+(c) 打开 告警日志 alert_orcl.log，在底部可以查看 死锁 的 信息：
+
+- alert_orcl.log
+
+Mon Apr 06 15:10:04 2020
+ORA-00060: Deadlock detected. More info in file c:\app\huang\diag\rdbms\orcl\orcl\trace\orcl_ora_12648.trc.
+
+
+
+***********************************************************
+***********************************************************
+
+
+2. 跟踪文件 - trc文件：
+当系统启动时或运行过程中出现错误时,系统会自动记录跟踪文件到指定的目录,以便于检查。
+e.g.
+orcl_ora_12648.trc
+
+跟踪文件的位置，跟 告警日志 文件在同一个目录下：
+c:\app\huang\diag\rdbms\orcl\orcl\trace\orcl_ora_12648.trc
+
+可以使用 tkprof 工具，格式化 跟踪文件，再进行查看。
+sort = fchela   // 按照CPU时间进行排序
+
+例子：
+PS C:\Users\Huang\MySQL-and-Oracle-Index> tkprof c:\app\huang\diag\rdbms\orcl\orcl\trace\orcl_ora_12648.trc output.txt sort = fchela;
+
+TKPROF: Release 11.2.0.1.0 - Development on 星期一 4月 6 15:27:18 2020
+
+Copyright (c) 1982, 2009, Oracle and/or its affiliates.  All rights reserved.
+
+
+
+***********************************************************
+***********************************************************
+
+
+3. 执行计划
+
+- Oracle 数据库的优化器，有两种：
+1. RBO：基于 rule 规则  (淘汰了)
+2. CBO: 基于 cost 成本
+
+
+- Oracle 执行计划 的例子：
+
+查询10号 部门的员工：
+explain plan for select count(*) from emp where deptno=10;
+select * from table(DBMS_XPLAN.display);
+
+
+1. 没有 Index
+PLAN_TABLE_OUTPUT
+--------------------------------------------------------------------------------
+Plan hash value: 2083865914
+
+---------------------------------------------------------------------------
+| Id  | Operation          | Name | Rows  | Bytes | Cost (%CPU)| Time     |
+---------------------------------------------------------------------------
+|   0 | SELECT STATEMENT   |      |     1 |     3 |     3   (0)| 00:00:01 |
+|   1 |  SORT AGGREGATE    |      |     1 |     3 |            |          |
+|*  2 |   TABLE ACCESS FULL| EMP  |     5 |    15 |     3   (0)| 00:00:01 |
+---------------------------------------------------------------------------
+
+
+2. 有 Index
+create Index depno_idx on emp(deptno);
+
+PLAN_TABLE_OUTPUT
+--------------------------------------------------------------------------------
+Plan hash value: 2535768725
+
+-------------------------------------------------------------------------------
+| Id  | Operation         | Name      | Rows  | Bytes | Cost (%CPU)| Time     |
+-------------------------------------------------------------------------------
+|   0 | SELECT STATEMENT  |           |     1 |     3 |     1   (0)| 00:00:01 |
+|   1 |  SORT AGGREGATE   |           |     1 |     3 |            |          |
+|*  2 |   INDEX RANGE SCAN| DEPNO_IDX |     5 |    15 |     1   (0)| 00:00:01 |
+-------------------------------------------------------------------------------
+
+
+***********************************************************
+***********************************************************
+
+
+4. 统计信息：非常重要，基于统计信息，可以生成AWR报告
+   概念：反映的数据的分布情况，提供给数据库的优化器（CBO），用于生成最佳的执行计划。
+
+    收集统计信息：可以针对表、索引、数据库对象 都可以。
+    analyze table scott.emp estimate statistics;        // 估算：适合大表
+    analyze table scott.emp compute statistics;         // 精确计算：适合小表
+
+举例：
+
+-收集统计信息之前：
+SQL> select Owner, table_name, blocks, empty_blocks from dba_tables where  Owner = 'SCOTT';
+
+OWNER                                                        TABLE_NAME                                                       BLOCKS EMPTY_BLOCKS
+------------------------------------------------------------ ------------------------------------------------------------ ---------- ------------
+SCOTT                                                        DEPT                                                                  5            0
+SCOTT                                                        EMP                                                                   5            0
+SCOTT                                                        SALGRADE                                                              5            0
+SCOTT                                                        BONUS                                                                 0            0
+
+- 收集统计信息之后：
+analyze table scott.emp estimate statistics;
+
+SQL> select Owner, table_name, blocks, empty_blocks from dba_tables where  Owner = 'SCOTT';
+
+OWNER                                                        TABLE_NAME                                                       BLOCKS EMPTY_BLOCKS
+------------------------------------------------------------ ------------------------------------------------------------ ---------- ------------
+SCOTT                                                        DEPT                                                                  5            0
+SCOTT                                                        EMP                                                                   5            3
+SCOTT                                                        SALGRADE                                                              5            0
+SCOTT                                                        BONUS                                                                 0            0
+
+
+
+***********************************************************
+***********************************************************
+
+
+5. auto trace:  自动跟踪
+   默认：关闭的
+   set autotrace on;        // 打开
+   set autotrace off;       // 关闭
+
+例子：
+打开了 自动跟踪 auto trace，查看跟多的 执行计划 和 统计信息：
+
+(1)
+SQL> select count(*) from scott.emp;
+
+  COUNT(*)
+----------
+        17
+
+
+执行计划
+----------------------------------------------------------
+Plan hash value: 2937609675
+
+-------------------------------------------------------------------
+| Id  | Operation        | Name   | Rows  | Cost (%CPU)| Time     |
+-------------------------------------------------------------------
+|   0 | SELECT STATEMENT |        |     1 |     1   (0)| 00:00:01 |
+|   1 |  SORT AGGREGATE  |        |     1 |            |          |
+|   2 |   INDEX FULL SCAN| PK_EMP |    17 |     1   (0)| 00:00:01 |
+-------------------------------------------------------------------
+
+
+统计信息
+----------------------------------------------------------
+          0  recursive calls
+          0  db block gets
+          1  consistent gets
+          0  physical reads
+          0  redo size
+        534  bytes sent via SQL*Net to client
+        523  bytes received via SQL*Net from client
+          2  SQL*Net roundtrips to/from client
+          0  sorts (memory)
+          0  sorts (disk)
+          1  rows processed
+
+(2) 然后 修改并清空 缓存 buffer_cache:
+SQL> alter system flush buffer_cache;
+
+系统已更改。
+
+(3) 再次运行 SQL，并自动跟踪。
+发现'physical reads' 的I/O发生变化：
+
+SQL> select count(*) from scott.emp;
+
+  COUNT(*)
+----------
+        17
+
+
+执行计划
+----------------------------------------------------------
+Plan hash value: 2937609675
+
+-------------------------------------------------------------------
+| Id  | Operation        | Name   | Rows  | Cost (%CPU)| Time     |
+-------------------------------------------------------------------
+|   0 | SELECT STATEMENT |        |     1 |     1   (0)| 00:00:01 |
+|   1 |  SORT AGGREGATE  |        |     1 |            |          |
+|   2 |   INDEX FULL SCAN| PK_EMP |    17 |     1   (0)| 00:00:01 |
+-------------------------------------------------------------------
+
+
+统计信息
+----------------------------------------------------------
+          0  recursive calls
+          0  db block gets
+          1  consistent gets
+          8  physical reads
+          0  redo size
+        534  bytes sent via SQL*Net to client
+        523  bytes received via SQL*Net from client
+          2  SQL*Net roundtrips to/from client
+          0  sorts (memory)
+          0  sorts (disk)
+          1  rows processed
+
+
+***********************************************************
+***********************************************************
+
+
+6. 动态性能视图
+是一种数据字典，以 v$ 开头，反映了数据库的实时运行状态
+
+例子：
+监控锁：v$lock
+
+(a) 先获取当前的 会话session 的ID号：
+SQL> select sid from v$mystat where rownum=1;
+
+       SID
+----------
+         5
+
+(b) 更新数据，获得锁look:
+SQL> update scott.emp set sal=6000 where empno=7839;
+
+
+(c) 查看 锁的情况，在表 v$lock:
+SQL> select sid, type, lmode, request from v$lock where sid = 5;
+
+       SID TYPE      LMODE    REQUEST
+---------- ---- ---------- ----------
+         5 AE            4          0
+         5 TO            3          0
+         5 TO            3          0
+         5 TM            3          0
+         5 TM            3          0
+         5 TX            6          0
+
+
+
